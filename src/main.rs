@@ -1,6 +1,7 @@
 use std::cmp::{max, Reverse};
-use std::collections::{HashMap, VecDeque};
-use std::fmt::Debug;
+use std::collections::HashMap;
+use std::fmt;
+use std::fmt::{Debug, Formatter};
 use itertools::Itertools;
 
 /// Initial implementation of the huffman encoding. Currently just using one file for the project
@@ -18,8 +19,15 @@ Etiam mattis lectus vitae magna varius cursus. Cras maximus malesuada diam eu fa
 Vivamus iaculis non nulla et congue. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Nulla ac enim orci. Maecenas volutpat ex ac mauris rutrum, nec sodales neque vulputate. Nulla ornare at urna ac tincidunt. Nam dapibus purus id mi condimentum, non eleifend eros egestas. Aenean lectus arcu, aliquam convallis accumsan eu, cursus et tortor. Etiam fringilla felis non odio congue convallis. Maecenas laoreet tempor mauris eget tincidunt. Pellentesque eu orci in tellus interdum fermentum et eget neque. Duis scelerisque, ex eget bibendum sodales, lorem elit lobortis nisl, eu euismod nunc lacus id neque. ";
 
     // The Rust std lib is missing some useful iterators so we use the itertools crate
-    // Let's find the frequency and sort it :)
-    let mut frq: Vec<_> = to_be_encoded.chars()
+    // Let's find the frequency.
+
+    let huffman_code = process(to_be_encoded).unwrap();
+    let text = decode(&Box::new(huffman_code.0), huffman_code.1);
+    println!("{}", text == to_be_encoded)
+}
+
+fn process(input: &str) -> Result<(Node, Vec<u8>)> {
+    let frq: Vec<_> = input.chars()
         .sorted()
         .group_by(|&c| c) // From itertools
         .into_iter()
@@ -37,22 +45,42 @@ Vivamus iaculis non nulla et congue. Vestibulum ante ipsum primis in faucibus or
             }, Reverse(it.1))
         ));
 
-    let tree = create_huffman(&mut pq);
+    let tree = create_huffman(&mut pq)?;
 
-    println!("raw string size: {}, ",std::mem::size_of_val(&*to_be_encoded));
-    let encoded = encode(&tree, to_be_encoded.to_string());
-    println!("encoded size: {}", (std::mem::size_of_val(&*encoded)) / 8);
-    let text = decode(&Box::new(tree), encoded);
-    println!("{}", text == to_be_encoded)
+    let encoded = encode(&tree, input.to_string())?;
+
+    Ok((tree, encoded))
 }
 
-fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Node {
-    if pq.len() == 1 { return pq.pop().unwrap().0 }
+fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Result<Node> {
+    if pq.len() == 1 {
+        return match pq.pop() {
+            Some(priority_queue) => Ok(priority_queue.0),
+            None => Err(HuffmanError::InvalidPriorityQueue)
+        }
+    }
 
-    let mut node_one = pq.pop().unwrap();
-    let mut node_two = pq.pop().unwrap();
+    let node_one = match pq.pop() {
+        Some(node) => node,
+        None => return Err(HuffmanError::InvalidPriorityQueue)
+    };
 
-    let value = node_two.0.value.unwrap() + node_one.0.value.unwrap();
+    let node_two = match pq.pop() {
+        Some(node) => node,
+        None => return Err(HuffmanError::InvalidPriorityQueue)
+    };
+
+    let node_one_val = match node_one.0.value {
+        Some(value) => value,
+        None => return Err(HuffmanError::UnexpectedNoneValueForNodeValue)
+    };
+
+    let node_two_val = match node_two.0.value {
+        Some(value) => value,
+        None => return Err(HuffmanError::UnexpectedNoneValueForNodeValue)
+    };
+
+    let value = node_one_val + node_two_val;
 
     pq.push(Node {
         content: None,
@@ -61,7 +89,7 @@ fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Node {
         right_child: Some(Box::new(node_two.0)),
     }, Reverse(value));
 
-    create_huffman(pq)
+    Ok(create_huffman(pq)?)
 }
 
 fn decode(root: &Box<Node>, code: Vec<u8> ) -> String {
@@ -73,7 +101,7 @@ fn decode(root: &Box<Node>, code: Vec<u8> ) -> String {
 
         match val.clone() {
             0 =>  if let Some(ref left_child) = node.left_child { node = left_child }
-            _ =>  if let Some(ref right_child) = node.right_child { node = right_child }
+            _ =>if let Some(ref right_child) = node.right_child { node = right_child }
         }
 
         if let Some(content) = node.content {
@@ -81,38 +109,63 @@ fn decode(root: &Box<Node>, code: Vec<u8> ) -> String {
             node = root
         }
     });
+
     text
 }
 
-
-fn encode(root: &Node, text: String) -> Vec<u8> {
+fn encode(root: &Node, text: String) -> Result<Vec<u8>> {
     let height = tree_height(&root);
-    let mut codes: Vec<_> = vec![0; height];
+    let mut codes: Vec<_> = vec![0; height?];
     codes.fill(0);
     let mut huffman: HashMap<char, Vec<u8>> = HashMap::new();
 
-    encode_helper(root.clone(), codes, 0, &mut huffman);
+    encode_helper(root.clone(), codes, 0, &mut huffman)?;
+
+
     let mut encoded: Vec<u8> = Vec::new();
+    let mut errors: Vec<char> = Vec::new();
     text.chars().for_each(|c| {
-        let code = huffman.get(&c).unwrap();
-        encoded.extend(code);
+        match huffman.get(&c) {
+            Some(code) => encoded.extend(code),
+            None => errors.push(c)
+        }
     });
-    encoded
+
+    if errors.is_empty() {
+        Ok(encoded)
+    } else {
+        Err(HuffmanError::MissingCodesForKeys)
+    }
 }
-fn encode_helper(root: &Node, mut code: Vec<u32>, idx: usize, huffman: &mut HashMap<char, Vec<u8>>) {
+
+fn encode_helper(root: &Node, mut code: Vec<u32>, idx: usize, huffman: &mut HashMap<char, Vec<u8>>) -> Result<()> {
     if root.left_child.is_none() && root.right_child.is_none() {
-        huffman.entry(root.content.unwrap()).or_insert(format_arr(code.clone(), idx));
+        let content = match root.content {
+            Some(content) => content,
+            None => return Err(HuffmanError::NodeContentNoneError)
+        };
+
+        huffman.entry(content).or_insert(format_arr(code.clone(), idx));
     }
 
     if root.left_child.is_some() {
         code[idx] = 0;
-        encode_helper(&*root.left_child.as_ref().unwrap(), code.clone(), idx + 1, huffman)
-   }
-
+        if let Some(left_child) = &root.left_child {
+            encode_helper(left_child, code.clone(), idx + 1, huffman)?;
+        } else {
+            return Err(HuffmanError::ChildNodeNoneError)
+        }
+    }
     if root.right_child.is_some() {
         code[idx] = 1;
-        encode_helper(&*root.right_child.as_ref().unwrap(), code.clone(), idx + 1, huffman)
-   }
+        if let Some(right_child) = &root.right_child {
+            encode_helper(right_child, code.clone(), idx + 1, huffman)?;
+        } else {
+            return Err(HuffmanError::ChildNodeNoneError)
+        }
+    }
+
+    Ok(())
 }
 
 // Structs are stack allocated by default.
@@ -128,13 +181,22 @@ struct Node {
     right_child: Option<Box<Node>>,
 }
 
-fn tree_height(node: &Node) -> usize {
+fn tree_height(node: &Node) -> Result<usize> {
     return if node.left_child.is_none() && node.right_child.is_none() {
-        0
+        Ok(0)
     } else {
-        let left_height = tree_height(node.left_child.as_ref().unwrap());
-        let right_height = tree_height(node.right_child.as_ref().unwrap());
-        max(left_height, right_height) + 1
+        let left_height = tree_height(
+            match node.left_child.as_ref() {
+                Some(node) => node,
+                None => return Err(HuffmanError::TreeHeightError)
+            });
+
+        let right_height = tree_height(
+            match node.right_child.as_ref() {
+                Some(node) => node,
+                None => return Err(HuffmanError::TreeHeightError)
+            });
+        Ok(max(left_height?, right_height?) + 1)
     }
 }
 
@@ -143,3 +205,46 @@ fn format_arr(codes: Vec<u32>, idx: usize) -> Vec<u8> {
     for i in 0..idx { arr.push(codes[i] as u8) }
     arr
 }
+
+// Defining types for error handling using custom error types and typedef for Result
+
+type Result<T> = std::result::Result< T, HuffmanError>;
+
+#[derive(Debug)]
+enum HuffmanError {
+    TreeHeightError,
+    ChildNodeNoneError,
+    NodeContentNoneError,
+    MissingCodesForKeys,
+    InvalidPriorityQueue,
+    UnexpectedNoneValueForNodeValue
+}
+
+impl fmt::Display for HuffmanError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            HuffmanError::TreeHeightError => {
+                write!(f, "Could not evaluate height of huffman tree")
+            },
+            HuffmanError::ChildNodeNoneError => {
+                write!(f, "Could not access child node. Error in huffman tree stucture")
+            },
+            HuffmanError::NodeContentNoneError=> {
+                write!(f, "Could not access node content. Error in huffman tree stucture")
+            }
+            HuffmanError::MissingCodesForKeys => {
+                write!(f, "Could not find corresponding binary code for the given key")
+            },
+            HuffmanError::InvalidPriorityQueue=> {
+                write!(f, "Tried to pop None value from PQ")
+            }
+            HuffmanError::UnexpectedNoneValueForNodeValue=> {
+                write!(f, "Tried to access value of node, but it was None")
+            }
+        }
+    }
+}
+
+impl std::error::Error for HuffmanError {}
+
+
