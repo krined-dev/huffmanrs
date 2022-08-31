@@ -4,7 +4,9 @@ use std::cmp::{max, Reverse};
 use std::collections::HashMap;
 use std::{fmt, fs};
 use std::fmt::{Debug, Formatter};
+use std::fs::File;
 use std::time::Instant;
+use bitvec::prelude::BitVec;
 use itertools::Itertools;
 use priority_queue::PriorityQueue;
 use clap::Parser;
@@ -16,7 +18,7 @@ use clap::Parser;
 fn main() {
     let args = Args::parse();
     // Test value
-    let medium_input = &fs::read_to_string(args.file).expect("Invalid file path")[..];
+    let medium_input = &fs::read_to_string(args.file.clone()).expect("Invalid file path")[..];
     // The Rust std lib is missing some useful iterators so we use the itertools crate
     // Let's find the frequency.
 
@@ -26,12 +28,13 @@ fn main() {
         Err(error) => panic!("Unexpected error: {}: {}", error, error.to_string())
     };
     let elapsed = now.elapsed().as_millis();
-    println!("Text encoded in {} millis", elapsed);
+    let file = File::create(args.file + ".test");
     let text = decode(&Box::new(huffman_code.0), huffman_code.1);
-    println!("Decoded to correct string: {}", text == medium_input)
+    println!("Decoded to correct string: {}", text == medium_input);
+
 }
 
-fn process(input: &str) -> Result<(Node, Vec<u8>)> {
+fn process(input: &str) -> Result<(Node, BitVec)> {
     let frq: Vec<_> = input.chars()
         .sorted()
         .group_by(|&c| c) // From itertools
@@ -97,15 +100,15 @@ fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Result<Node> {
     Ok(create_huffman(pq)?)
 }
 
-fn decode(root: &Box<Node>, code: Vec<u8> ) -> String {
+fn decode(root: &Box<Node>, code: BitVec) -> String {
 
     let mut text = String::new();
     let mut node = root;
 
     code.iter().for_each(|val| {
 
-        match val.clone() {
-            0 =>  if let Some(ref left_child) = node.left_child { node = left_child }
+        match *val.clone() {
+            true =>  if let Some(ref left_child) = node.left_child { node = left_child }
             _ =>if let Some(ref right_child) = node.right_child { node = right_child }
         }
 
@@ -118,17 +121,16 @@ fn decode(root: &Box<Node>, code: Vec<u8> ) -> String {
     text
 }
 
-fn encode(root: &Node, text: String) -> Result<Vec<u8>> {
-    let height = tree_height(&root);
-    let mut codes: Vec<_> = vec![0; height?];
-    codes.fill(0);
-    let mut huffman: HashMap<char, Vec<u8>> = HashMap::new();
+fn encode(root: &Node, text: String) -> Result<BitVec> {
+    let height = tree_height(&root).unwrap(); // TODO fix
+    let mut codes = BitVec::new();
+    let mut huffman: HashMap<char, BitVec> = HashMap::new();
 
-    encode_helper(root.clone(), codes, 0, &mut huffman)?;
+    encode_helper(root.clone(), codes, &mut huffman)?;
 
-
-    let mut encoded: Vec<u8> = Vec::new();
+    let mut encoded: BitVec = BitVec::new();
     let mut errors: Vec<char> = Vec::new();
+
     text.chars().for_each(|c| {
         match huffman.get(&c) {
             Some(code) => encoded.extend(code),
@@ -143,28 +145,30 @@ fn encode(root: &Node, text: String) -> Result<Vec<u8>> {
     }
 }
 
-fn encode_helper(root: &Node, mut code: Vec<u32>, idx: usize, huffman: &mut HashMap<char, Vec<u8>>) -> Result<()> {
+fn encode_helper(root: &Node, mut code: BitVec, huffman: &mut HashMap<char, BitVec>) -> Result<()> {
     if root.left_child.is_none() && root.right_child.is_none() {
         let content = match root.content {
             Some(content) => content,
             None => return Err(HuffmanError::NodeContentNoneError)
         };
 
-        huffman.entry(content).or_insert(format_arr(code.clone(), idx));
+        huffman.entry(content).or_insert(code.clone());
     }
 
     if root.left_child.is_some() {
-        code[idx] = 0;
         if let Some(left_child) = &root.left_child {
-            encode_helper(left_child, code.clone(), idx + 1, huffman)?;
+            let mut left_code = code.clone();
+            left_code.push(true);
+            encode_helper(left_child, left_code, huffman)?;
         } else {
             return Err(HuffmanError::ChildNodeNoneError)
         }
     }
     if root.right_child.is_some() {
-        code[idx] = 1;
+        let mut right_code = code.clone();
+        right_code.push(false);
         if let Some(right_child) = &root.right_child {
-            encode_helper(right_child, code.clone(), idx + 1, huffman)?;
+            encode_helper(right_child, right_code, huffman)?;
         } else {
             return Err(HuffmanError::ChildNodeNoneError)
         }
@@ -203,12 +207,6 @@ fn tree_height(node: &Node) -> Result<usize> {
             });
         Ok(max(left_height?, right_height?) + 1)
     }
-}
-
-fn format_arr(codes: Vec<u32>, idx: usize) -> Vec<u8> {
-    let mut arr: Vec<u8> = Vec::new();
-    for i in 0..idx { arr.push(codes[i] as u8) }
-    arr
 }
 
 // Defining types for error handling using custom error types and typedef for Result
