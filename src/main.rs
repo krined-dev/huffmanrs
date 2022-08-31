@@ -1,29 +1,29 @@
 use std::cmp::{max, Reverse};
 use std::collections::HashMap;
-use std::fmt;
+use std::{fmt, fs};
 use std::fmt::{Debug, Formatter};
+use std::time::Instant;
 use itertools::Itertools;
+use priority_queue::PriorityQueue;
+use clap::Parser;
 
 /// Initial implementation of the huffman encoding. Currently just using one file for the project
 /// Refactoring and modularization will be done once I have a working prototype.
 /// This is an initial naive solution, will optimize as we go
-use priority_queue::PriorityQueue;
 
 fn main() {
+    let args = Args::parse();
     // Test value
-    let to_be_encoded = "
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum leo arcu, aliquet a nisi non, tincidunt tincidunt ligula. Donec placerat, nunc vel fringilla fringilla, libero mi tincidunt ante, non venenatis urna felis nec quam. Quisque fermentum nec risus id ullamcorper. Sed pretium aliquam ex sit amet fringilla. Maecenas vehicula ante et urna lacinia, sit amet scelerisque mi mattis. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Donec sit amet elit at nibh semper dapibus. In ut dolor at dolor efficitur aliquam vitae eu mi.
-Pellentesque porta varius neque at pharetra. Etiam venenatis purus a massa suscipit consectetur eget et lorem. Vivamus aliquam elementum lacus eget vestibulum. Donec accumsan fermentum felis ac aliquam. Donec vel nibh id ipsum maximus semper quis id nunc. Praesent ut venenatis ante. Pellentesque ut augue tincidunt, semper sem vel, vehicula turpis. Maecenas sodales vehicula ex. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Proin dapibus consequat blandit. Nunc luctus vehicula est nec lacinia. Quisque ligula sem, bibendum nec porttitor ut, euismod ac ante.
-Donec ac est ut sem aliquet dictum. Fusce egestas faucibus nisi a lacinia. Curabitur egestas nisi cursus mauris elementum, sit amet vulputate justo varius. Donec vel vehicula dui, ac rhoncus felis. Aliquam erat volutpat. Nullam elementum lorem non placerat feugiat. Cras facilisis, nisi vel ultricies condimentum, dolor dolor facilisis velit, vitae fringilla magna eros at lacus. Integer ullamcorper luctus libero vitae fermentum. Fusce nec lacus a lectus convallis cursus. Pellentesque rhoncus ante a velit dignissim, quis placerat tellus placerat. Nunc at elit vitae nisl venenatis molestie. Vivamus tristique scelerisque enim, a ultricies ex auctor non.
-Etiam mattis lectus vitae magna varius cursus. Cras maximus malesuada diam eu facilisis. Fusce tempus sollicitudin massa. Morbi rutrum pulvinar lorem, sit amet scelerisque risus volutpat vitae. In hac habitasse platea dictumst. Quisque ullamcorper lectus justo, ut maximus sapien lobortis at. Sed iaculis porta dictum. Nunc at facilisis lectus, eget viverra magna.
-Vivamus iaculis non nulla et congue. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Nulla ac enim orci. Maecenas volutpat ex ac mauris rutrum, nec sodales neque vulputate. Nulla ornare at urna ac tincidunt. Nam dapibus purus id mi condimentum, non eleifend eros egestas. Aenean lectus arcu, aliquam convallis accumsan eu, cursus et tortor. Etiam fringilla felis non odio congue convallis. Maecenas laoreet tempor mauris eget tincidunt. Pellentesque eu orci in tellus interdum fermentum et eget neque. Duis scelerisque, ex eget bibendum sodales, lorem elit lobortis nisl, eu euismod nunc lacus id neque. ";
-
+    let medium_input = &fs::read_to_string(args.file).expect("Invalid file path")[..];
     // The Rust std lib is missing some useful iterators so we use the itertools crate
     // Let's find the frequency.
 
-    let huffman_code = process(to_be_encoded).unwrap();
+    let now = Instant::now();
+    let huffman_code = process(medium_input).unwrap();
+    let elapsed = now.elapsed().as_millis();
+    println!("Text encoded in {} millis", elapsed);
     let text = decode(&Box::new(huffman_code.0), huffman_code.1);
-    println!("{}", text == to_be_encoded)
+    println!("Decoded to correct string: {}", text == medium_input)
 }
 
 fn process(input: &str) -> Result<(Node, Vec<u8>)> {
@@ -247,4 +247,10 @@ impl fmt::Display for HuffmanError {
 
 impl std::error::Error for HuffmanError {}
 
-
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// path to file to encode
+    #[clap(short, long, value_parser)]
+    file: String,
+}
