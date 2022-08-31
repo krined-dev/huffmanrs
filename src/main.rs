@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::cmp::{max, Reverse};
 use std::collections::HashMap;
 use std::{fmt, fs};
@@ -19,7 +21,10 @@ fn main() {
     // Let's find the frequency.
 
     let now = Instant::now();
-    let huffman_code = process(medium_input).unwrap();
+    let huffman_code = match process(medium_input) {
+        Ok(huffman_code) => huffman_code,
+        Err(error) => panic!("Unexpected error: {}: {}", error, error.to_string())
+    };
     let elapsed = now.elapsed().as_millis();
     println!("Text encoded in {} millis", elapsed);
     let text = decode(&Box::new(huffman_code.0), huffman_code.1);
