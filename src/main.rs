@@ -211,12 +211,15 @@ fn tree_height(node: &Node) -> Result<usize> {
 }
 
 fn write_to_file(path: String, root: Node, mut code: BitVec<u8>) -> Result<()> {
-    let mut buffer = match std::fs::File::create(path) {
+    let mut buffer = match File::create(path) {
         Ok(file) => file,
         Err(_) => return Err(HuffmanError::UnableToCreateOutFile)
     };
 
-    buffer.write(code.as_raw_slice());
+    match buffer.write(code.as_raw_slice()) {
+        Ok(_) => {},
+        Err(_) => return Err(HuffmanError::CouldNotWriteEncodedToFile)
+    }
 
     Ok(())
 }
@@ -233,7 +236,8 @@ enum HuffmanError {
     MissingCodesForKeys,
     InvalidPriorityQueue,
     UnexpectedNoneValueForNodeValue,
-    UnableToCreateOutFile
+    UnableToCreateOutFile,
+    CouldNotWriteEncodedToFile
 }
 
 impl fmt::Display for HuffmanError {
@@ -259,6 +263,9 @@ impl fmt::Display for HuffmanError {
             },
             HuffmanError::UnableToCreateOutFile=> {
                 write!(f, "The application failed when creating output file.")
+            },
+            HuffmanError::CouldNotWriteEncodedToFile=> {
+                write!(f, "Unable to write encoded buffer to file output, system out of memory or permission error?")
             }
         }
     }
