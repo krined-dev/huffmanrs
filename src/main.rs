@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::time::Instant;
 use bitvec::array::BitArray;
+use bitvec::bits;
 use bitvec::prelude::BitVec;
 use itertools::Itertools;
 use priority_queue::PriorityQueue;
@@ -20,7 +21,7 @@ use clap::Parser;
 fn main() {
     let args = Args::parse();
     // Test value
-    let medium_input = &fs::read_to_string(args.file.clone()).expect("Invalid file path")[..];
+    let medium_input = &fs::read_to_string(&args.file.clone()).expect("Invalid file path")[..];
     // The Rust std lib is missing some useful iterators so we use the itertools crate
     // Let's find the frequency.
 
@@ -30,9 +31,11 @@ fn main() {
         Err(error) => panic!("Unexpected error: {}: {}", error, error.to_string())
     };
     let elapsed = now.elapsed().as_millis();
-    write_to_file(args.file, huffman_code.2, huffman_code.1);
-    //let text = decode(&Box::new(huffman_code.0), huffman_code.1);
-    //println!("Decoded to correct string: {}", text == medium_input);
+    write_to_file(args.file.clone(), huffman_code.2, huffman_code.1);
+    let from_file = fs::read(args.file.clone() + ".hz").unwrap();
+    let bits_from_file = BitVec::from_vec(from_file);
+    let text = decode(&Box::new(huffman_code.0), bits_from_file);
+    println!("Decoded to correct string: {}", text == medium_input);
 
 }
 
@@ -216,14 +219,8 @@ fn write_to_file(path: String, frq: Vec<(char, u32)>, mut code: BitVec<u8>) -> R
         Err(_) => return Err(HuffmanError::UnableToCreateOutFile)
     };
 
-    match buffer.write(code.as_raw_slice()) {
-        Ok(_) => {},
-        Err(_) => return Err(HuffmanError::CouldNotWriteEncodedToFile)
-    }
-    let config = bincode::config::standard();
-    let freq_encoded = bincode::encode_to_vec(frq, config).unwrap();
 
-    match buffer.write(&*freq_encoded) {
+    match buffer.write(code.as_raw_slice()) {
         Ok(_) => {},
         Err(_) => return Err(HuffmanError::CouldNotWriteEncodedToFile)
     }
