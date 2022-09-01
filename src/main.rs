@@ -30,13 +30,13 @@ fn main() {
         Err(error) => panic!("Unexpected error: {}: {}", error, error.to_string())
     };
     let elapsed = now.elapsed().as_millis();
-    //write_to_file(args.file + ".test", huffman_code.0, huffman_code.1);
-    let text = decode(&Box::new(huffman_code.0), huffman_code.1);
-    println!("Decoded to correct string: {}", text == medium_input);
+    write_to_file(args.file, huffman_code.2, huffman_code.1);
+    //let text = decode(&Box::new(huffman_code.0), huffman_code.1);
+    //println!("Decoded to correct string: {}", text == medium_input);
 
 }
 
-fn process(input: &str) -> Result<(Node, BitVec<u8>)> {
+fn process(input: &str) -> Result<(Node, BitVec<u8>, Vec<(char, u32)>)> {
     let frq: Vec<_> = input.chars()
         .sorted()
         .group_by(|&c| c) // From itertools
@@ -46,7 +46,7 @@ fn process(input: &str) -> Result<(Node, BitVec<u8>)> {
 
     // Priority queue - Can provide my own implementation of a priority queue in rust if needed for the assignment
     let mut pq: PriorityQueue<Node, Reverse<u32>> = PriorityQueue::from_iter(
-        frq.into_iter().map(|it|
+        frq.clone().into_iter().map(|it|
             (Node {
                 content: Some(it.0),
                 value: Some(it.1),
@@ -59,7 +59,7 @@ fn process(input: &str) -> Result<(Node, BitVec<u8>)> {
 
     let encoded = encode(&tree, input.to_string())?;
 
-    Ok((tree, encoded))
+    Ok((tree, encoded, frq))
 }
 
 fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Result<Node> {
@@ -210,13 +210,20 @@ fn tree_height(node: &Node) -> Result<usize> {
     }
 }
 
-fn write_to_file(path: String, root: Node, mut code: BitVec<u8>) -> Result<()> {
-    let mut buffer = match File::create(path) {
+fn write_to_file(path: String, frq: Vec<(char, u32)>, mut code: BitVec<u8>) -> Result<()> {
+    let mut buffer = match File::create(path + ".hz") { // A take on .gz?
         Ok(file) => file,
         Err(_) => return Err(HuffmanError::UnableToCreateOutFile)
     };
 
     match buffer.write(code.as_raw_slice()) {
+        Ok(_) => {},
+        Err(_) => return Err(HuffmanError::CouldNotWriteEncodedToFile)
+    }
+    let config = bincode::config::standard();
+    let freq_encoded = bincode::encode_to_vec(frq, config).unwrap();
+
+    match buffer.write(&*freq_encoded) {
         Ok(_) => {},
         Err(_) => return Err(HuffmanError::CouldNotWriteEncodedToFile)
     }
