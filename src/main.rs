@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::{fmt, fs};
 use std::fmt::{Debug, Formatter};
 use std::fs::File;
+use std::io::{Read, Write};
 use std::time::Instant;
+use bitvec::array::BitArray;
 use bitvec::prelude::BitVec;
 use itertools::Itertools;
 use priority_queue::PriorityQueue;
@@ -28,13 +30,13 @@ fn main() {
         Err(error) => panic!("Unexpected error: {}: {}", error, error.to_string())
     };
     let elapsed = now.elapsed().as_millis();
-    let file = File::create(args.file + ".test");
+    //write_to_file(args.file + ".test", huffman_code.0, huffman_code.1);
     let text = decode(&Box::new(huffman_code.0), huffman_code.1);
     println!("Decoded to correct string: {}", text == medium_input);
 
 }
 
-fn process(input: &str) -> Result<(Node, BitVec)> {
+fn process(input: &str) -> Result<(Node, BitVec<u8>)> {
     let frq: Vec<_> = input.chars()
         .sorted()
         .group_by(|&c| c) // From itertools
@@ -100,7 +102,7 @@ fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Result<Node> {
     Ok(create_huffman(pq)?)
 }
 
-fn decode(root: &Box<Node>, code: BitVec) -> String {
+fn decode(root: &Box<Node>, code: BitVec<u8>) -> String {
 
     let mut text = String::new();
     let mut node = root;
@@ -121,14 +123,13 @@ fn decode(root: &Box<Node>, code: BitVec) -> String {
     text
 }
 
-fn encode(root: &Node, text: String) -> Result<BitVec> {
-    let height = tree_height(&root).unwrap(); // TODO fix
+fn encode(root: &Node, text: String) -> Result<BitVec<u8>> {
     let mut codes = BitVec::new();
     let mut huffman: HashMap<char, BitVec> = HashMap::new();
 
     encode_helper(root.clone(), codes, &mut huffman)?;
 
-    let mut encoded: BitVec = BitVec::new();
+    let mut encoded: BitVec<u8> = BitVec::new();
     let mut errors: Vec<char> = Vec::new();
 
     text.chars().for_each(|c| {
@@ -209,6 +210,17 @@ fn tree_height(node: &Node) -> Result<usize> {
     }
 }
 
+fn write_to_file(path: String, root: Node, mut code: BitVec<u8>) -> Result<()> {
+    let mut buffer = match std::fs::File::create(path) {
+        Ok(file) => file,
+        Err(_) => return Err(HuffmanError::UnableToCreateOutFile)
+    };
+
+    buffer.write(code.as_raw_slice());
+
+    Ok(())
+}
+
 // Defining types for error handling using custom error types and typedef for Result
 
 type Result<T> = std::result::Result< T, HuffmanError>;
@@ -220,7 +232,8 @@ enum HuffmanError {
     NodeContentNoneError,
     MissingCodesForKeys,
     InvalidPriorityQueue,
-    UnexpectedNoneValueForNodeValue
+    UnexpectedNoneValueForNodeValue,
+    UnableToCreateOutFile
 }
 
 impl fmt::Display for HuffmanError {
@@ -243,6 +256,9 @@ impl fmt::Display for HuffmanError {
             }
             HuffmanError::UnexpectedNoneValueForNodeValue=> {
                 write!(f, "Tried to access value of node, but it was None")
+            },
+            HuffmanError::UnableToCreateOutFile=> {
+                write!(f, "The application failed when creating output file.")
             }
         }
     }
