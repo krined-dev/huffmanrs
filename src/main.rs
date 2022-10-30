@@ -25,16 +25,15 @@ fn main() {
     // The Rust std lib is missing some useful iterators so we use the itertools crate
     // Let's find the frequency.
 
-    let now = Instant::now();
     let huffman_code = match process(medium_input) {
         Ok(huffman_code) => huffman_code,
         Err(error) => panic!("Unexpected error: {}: {}", error, error.to_string())
     };
-    let elapsed = now.elapsed().as_millis();
-    write_to_file(args.file.clone(), huffman_code.2, huffman_code.1);
+
+    write_to_file(args.file.clone(), huffman_code.2, huffman_code.1).expect("TODO: panic message");
     let from_file = fs::read(args.file.clone() + ".hz").unwrap();
     let bits_from_file = BitVec::from_vec(from_file);
-    let text = decode(&Box::new(huffman_code.0), bits_from_file);
+    let text = decode_huffman(&Box::new(huffman_code.0), bits_from_file);
     println!("Decoded to correct string: {}", text == medium_input);
 
 }
@@ -47,7 +46,6 @@ fn process(input: &str) -> Result<(Node, BitVec<u8>, Vec<(char, u32)>)> {
         .map(|(k, v)| (k, v.count() as u32))
         .collect();
 
-    // Priority queue - Can provide my own implementation of a priority queue in rust if needed for the assignment
     let mut pq: PriorityQueue<Node, Reverse<u32>> = PriorityQueue::from_iter(
         frq.clone().into_iter().map(|it|
             (Node {
@@ -60,7 +58,7 @@ fn process(input: &str) -> Result<(Node, BitVec<u8>, Vec<(char, u32)>)> {
 
     let tree = create_huffman(&mut pq)?;
 
-    let encoded = encode(&tree, input.to_string())?;
+    let encoded = encode_huffman(&tree, input.to_string())?;
 
     Ok((tree, encoded, frq))
 }
@@ -105,7 +103,7 @@ fn create_huffman(pq: &mut PriorityQueue<Node, Reverse<u32>>) -> Result<Node> {
     Ok(create_huffman(pq)?)
 }
 
-fn decode(root: &Box<Node>, code: BitVec<u8>) -> String {
+fn decode_huffman(root: &Box<Node>, code: BitVec<u8>) -> String {
 
     let mut text = String::new();
     let mut node = root;
@@ -126,7 +124,7 @@ fn decode(root: &Box<Node>, code: BitVec<u8>) -> String {
     text
 }
 
-fn encode(root: &Node, text: String) -> Result<BitVec<u8>> {
+fn encode_huffman(root: &Node, text: String) -> Result<BitVec<u8>> {
     let mut codes = BitVec::new();
     let mut huffman: HashMap<char, BitVec> = HashMap::new();
 
@@ -283,4 +281,29 @@ struct Args {
     /// path to file to encode
     #[clap(short, long, value_parser)]
     file: String,
+}
+
+// test
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode() {
+        let text = "Hello world!";
+        let encoded = process(text).unwrap();
+        let decoded = decode_huffman(&Box::new(encoded.0), encoded.1);
+        assert_eq!(text, decoded);
+    }
+
+    // test compressed bitsize is smaller
+    #[test]
+    fn test_compressed_size() {
+        let text = "Hello world!";
+        let encoded = process(text).unwrap();
+        //let decoded = decode_huffman(&Box::new(encoded.0), encoded.1);
+        //assert_eq!(text, decoded);
+        assert!(encoded.1.len() < text.len() * 8);
+    }
+
 }
